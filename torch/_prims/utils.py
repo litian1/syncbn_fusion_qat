@@ -134,7 +134,7 @@ def TensorMeta(
     else:
         return FakeTensor(
             mode,
-            torch.empty_strided(shape, strides, dtype=dtype, device="meta"),
+            torch.empty(shape, dtype=dtype, device="meta"),
             device,
         )
 
@@ -319,8 +319,8 @@ def validate_dim_length(length: int):
     dimension length.
     """
 
-    assert isinstance(length, int)
-    assert length >= 0
+    # assert isinstance(length, int)
+    assert length > 0
 
 
 def validate_shape(shape: ShapeType):

@@ -52,6 +52,7 @@ class FakeTensorTest(TestCase):
         with enable_torch_dispatch_mode(FakeTensorMode(inner=None)):
             x = torch.empty(1, device="cpu")
             y = torch.empty(8, 8, device="cuda")
+            breakpoint()
             out = x.resize_as_(y)
             self.assertEqual(out.shape, (8, 8))
             self.assertEqual(out.device.type, "cpu")

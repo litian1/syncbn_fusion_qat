@@ -14,6 +14,7 @@ import functools
 import itertools
 import contextlib
 from dataclasses import dataclass
+from torch._decomp_tables import decomposition_table, meta_funcs
 
 
 aten = torch.ops.aten
@@ -170,7 +171,12 @@ def contructors(fake_mode, func, *args, **kwargs):
     out_device = new_kwargs.pop("device", None)
     out_device = out_device if out_device is not None else default_device
     new_kwargs["device"] = torch.device("meta")
-    r = func(*args, **new_kwargs)
+    # Atrocious hack to workaround not being able to pass symints to torch.ops
+    if func == torch.ops.aten.empty.SymInt:
+        sz = new_kwargs.pop("size")
+        r = torch.empty(sz, device='meta')
+    else:
+        r = func(*args, **new_kwargs)
     return FakeTensor(fake_mode, r, out_device)
 
 @register_op_impl(lambda func: func in (aten.to.prim_Device, aten.to.device))
@@ -261,6 +267,12 @@ def in_kernel_invocation_manager(fake_mode):
     finally:
         fake_mode.in_kernel_invocation = False
 
+def create_contiguous(shape):
+    strides = [1]
+    for dim in reversed(shape[:-1]):
+        strides.append(dim * strides[-1])
+    return list(reversed(strides))
+
 class FakeTensor(torch.Tensor):
     fake_device: torch.device
     fake_mode: "FakeTensorMode"
@@ -287,6 +299,18 @@ class FakeTensor(torch.Tensor):
     # TODO: resolve error in default __repr__
     def __repr__(self):
         return f"FakeTensor({self.fake_device}, {self.size()}, {self.dtype})"
+
+    def numel(self):
+        val = 1
+        for s in self.shape:
+            val = val * s
+        return val
+
+    def stride(self):
+        return create_contiguous(self.shape)
+
+    def new_empty(self, shape):
+        return torch.empty(shape)
 
     def new(self, *args, **kwargs):
         # torch.Tensor.new does not go through the normal dispatcher pattern
@@ -317,6 +341,9 @@ class FakeTensor(torch.Tensor):
             else:
                 return args[0].fake_device
 
+        # if func == torch.ops.aten.stride and len(args) == 1:
+        #     return []
+
         fake_mode = None
         for arg in itertools.chain(tree_flatten(args)[0], tree_flatten(kwargs)[0]):
             if isinstance(arg, FakeTensor):
@@ -324,7 +351,6 @@ class FakeTensor(torch.Tensor):
                     fake_mode = arg.fake_mode
                 else:
                     assert fake_mode is arg.fake_mode, "Mixing modes NYI"
-
         with enable_torch_dispatch_mode(fake_mode):
             return func(*args, **kwargs)
 
@@ -409,6 +435,7 @@ class FakeTensorMode(TorchDispatchMode):
         # the device property
         self.in_kernel_invocation = False
 
+
     def __torch_dispatch__(self, func, types, args=(), kwargs=None):
         kwargs = kwargs if kwargs else {}
 
@@ -418,7 +445,28 @@ class FakeTensorMode(TorchDispatchMode):
                 return torch.device("meta")
             else:
                 return args[0].fake_device
+        # import pdb; pdb.set_trace()
+        # if func in meta_funcs:
+        #     return meta_funcs[func](*args, **kwargs)
 
+        with enable_torch_dispatch_mode(self):
+            if func in meta_funcs:
+                r = meta_funcs[func](*args, **kwargs)
+                return r
+            elif func in decomposition_table:
+                r = decomposition_table[func](*args, **kwargs)
+                return r
+
+        if func == torch.ops.aten.size.default:
+            return args[0].shape
+        if func == torch.ops.aten.dim.default:
+            return len(args[0].shape)
+        if func == torch.ops.aten.is_contiguous.default:
+            return True
+        if func == torch.ops.aten.stride:
+            return create_contiguous(args[0].shape)
+
+                # return func(*args, **kwargs)
         # prims already wrap FakeTensor inputs to FakeTensor outputs
         # and do device logic, we dont need do anything but run them
         if "prims::" in func._schema.name:
@@ -488,7 +536,8 @@ class FakeTensorMode(TorchDispatchMode):
 
             common_device = FakeTensor._find_common_device(func, args, kwargs)
 
-            return tree_map(partial(wrap, device=common_device), r)
+            out = tree_map(partial(wrap, device=common_device), r)
+            return out
 
     def from_tensor(self, tensor):
         return self.fake_tensor_converter(self, tensor)
