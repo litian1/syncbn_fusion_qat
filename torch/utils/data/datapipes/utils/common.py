@@ -3,7 +3,8 @@ import fnmatch
 import warnings
 
 from io import IOBase
-from typing import Dict, Iterable, List, Tuple, Union, Optional
+from typing import Any, Dict, Iterable, List, Set, Tuple, Union, Optional
+
 
 from torch.utils.data._utils.serialization import DILL_AVAILABLE
 
@@ -179,12 +180,58 @@ class StreamWrapper:
     DataPipe operation like `FileOpener`. StreamWrapper would guarantee
     the wrapped file handler is closed when it's out of scope.
     '''
-    def __init__(self, file_obj):
+    session_streams: Set[Any] = set()
+
+    def __init__(self, file_obj, parent_stream=None, name=None):
         self.file_obj = file_obj
+        self.child_counter = 0
+        self.parent_stream = parent_stream
+        self.close_on_last_child = False
+        self.name = name
+        if parent_stream is not None:
+            if not isinstance(parent_stream, StreamWrapper):
+                raise RuntimeError('Parent steam should be StreamWrapper, {} was given'.format(type(parent_stream)))
+            parent_stream.child_counter += 1
+            self.parent_stream = parent_stream
+        StreamWrapper.session_streams.update(self)
+
+    @classmethod
+    def close_streams(cls, v, depth=0):
+        '''
+        Traverse structure and attempts to close all found StreamWrappers on best effort basis.
+        '''
+        if depth > 10:
+            return
+        if isinstance(v, StreamWrapper):
+            v.close()
+        else:
+            # Traverve only simple structures
+            if isinstance(v, dict):
+                for kk, vv in v.items():
+                    cls.close_streams(vv, depth=depth + 1)
+            elif isinstance(v, list) or isinstance(v, tuple):
+                for vv in v:
+                    cls.close_streams(vv, depth=depth + 1)
 
     def __getattr__(self, name):
         file_obj = self.__dict__['file_obj']
         return getattr(file_obj, name)
+
+    def close(self, *args, **kwargs):
+        StreamWrapper.session_streams.remove(self)
+        if self.parent_stream is not None:
+            self.parent_stream.child_counter -= 1
+            if not self.parent_stream.child_counter and self.parent_stream.close_on_last_child:
+                self.parent_stream.close()
+        self.file_obj.close(*args, **kwargs)
+
+    def autoclose(self):
+        '''
+        Marks Steam to close automatically as soon as all child streams are closed.
+        '''
+        if self.child_counter == 0:
+            self.close()
+        self.close_on_last_child = True
 
     def __dir__(self):
         attrs = list(self.__dict__.keys()) + list(StreamWrapper.__dict__.keys())
@@ -205,7 +252,10 @@ class StreamWrapper:
         return next(self.file_obj)
 
     def __repr__(self):
-        return f"StreamWrapper<{self.file_obj!r}>"
+        if self.name is None:
+            return f"StreamWrapper<{self.file_obj!r}>"
+        else:
+            return f"StreamWrapper<{self.name},{self.file_obj!r}>"
 
     def __getstate__(self):
         return self.file_obj
