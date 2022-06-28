@@ -145,6 +145,10 @@ include_patterns = [
 exclude_patterns = [
     # (linbinyu) copied from internal repo
     'tools/code_analyzer/gen_operators_yaml.py',
+    'tools/gen_vulkan_spv.py',
+    'tools/test/gen_operators_yaml_test.py',
+    'tools/test/gen_oplist_test.py',
+    'tools/test/test_selective_build.py',
 ]
 command = [
     'python3',

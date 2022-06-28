@@ -12,14 +12,19 @@ H_NAME = "spv.h"
 CPP_NAME = "spv.cpp"
 DEFAULT_ENV = {"precision": "highp", "format": "rgba32f"}
 
+
 def getName(filePath):
     return os.path.basename(filePath).replace("/", "_").replace(".", "_")
 
-def genCppH(hFilePath, cppFilePath, srcDirPath, glslcPath, tmpDirPath, env):
-    print("hFilePath:{} cppFilePath:{} srcDirPath:{} glslcPath:{} tmpDirPath:{}".format(
-        hFilePath, cppFilePath, srcDirPath, glslcPath, tmpDirPath))
 
-    vexs = glob.glob(os.path.join(srcDirPath, '**', '*.glsl'), recursive=True)
+def genCppH(hFilePath, cppFilePath, srcDirPath, glslcPath, tmpDirPath, env):
+    print(
+        "hFilePath:{} cppFilePath:{} srcDirPath:{} glslcPath:{} tmpDirPath:{}".format(
+            hFilePath, cppFilePath, srcDirPath, glslcPath, tmpDirPath
+        )
+    )
+
+    vexs = glob.glob(os.path.join(srcDirPath, "**", "*.glsl"), recursive=True)
     templateSrcPaths = []
     for f in vexs:
         if len(f) > 1:
@@ -36,17 +41,20 @@ def genCppH(hFilePath, cppFilePath, srcDirPath, glslcPath, tmpDirPath, env):
         codeTemplate = CodeTemplate.from_file(templateSrcPath)
         srcPath = tmpDirPath + "/" + name + ".glsl"
         content = codeTemplate.substitute(env)
-        with open(srcPath, 'w') as f:
+        with open(srcPath, "w") as f:
             f.write(content)
 
         spvPath = tmpDirPath + "/" + name + ".spv"
         print("spvPath {}".format(spvPath))
 
         cmd = [
-            glslcPath, "-fshader-stage=compute",
-            srcPath, "-o", spvPath,
+            glslcPath,
+            "-fshader-stage=compute",
+            srcPath,
+            "-o",
+            spvPath,
             "--target-env=vulkan1.0",
-            "-Werror"
+            "-Werror",
         ]
 
         print("\nglslc cmd:", cmd)
@@ -73,8 +81,8 @@ def genCppH(hFilePath, cppFilePath, srcDirPath, glslcPath, tmpDirPath, env):
         cpp += "const uint32_t " + name + "[] = {\n"
         sizeBytes = 0
         print("spvPath:{}".format(spvPath))
-        with open(spvPath, 'rb') as f:
-            for word in array.array('I', f.read()):
+        with open(spvPath, "rb") as f:
+            for word in array.array("I", f.read()):
                 cpp += "{},\n".format(word)
                 sizeBytes += 4
             cpp += "};\n"
@@ -101,32 +109,14 @@ def parse_arg_env(items):
 
 
 def main(argv):
-    parser = argparse.ArgumentParser(description='')
+    parser = argparse.ArgumentParser(description="")
+    parser.add_argument("-i", "--glsl-path", help="", default=".")
+    parser.add_argument("-c", "--glslc-path", required=True, help="")
+    parser.add_argument("-t", "--tmp-dir-path", required=True, help="/tmp")
+    parser.add_argument("-o", "--output-path", required=True, help="")
     parser.add_argument(
-        '-i',
-        '--glsl-path',
-        help='',
-        default='.')
-    parser.add_argument(
-        '-c',
-        '--glslc-path',
-        required=True,
-        help='')
-    parser.add_argument(
-        '-t',
-        '--tmp-dir-path',
-        required=True,
-        help='/tmp')
-    parser.add_argument(
-        '-o',
-        '--output-path',
-        required=True,
-        help='')
-    parser.add_argument(
-        "--env",
-        metavar="KEY=VALUE",
-        nargs='*',
-        help="Set a number of key-value pairs")
+        "--env", metavar="KEY=VALUE", nargs="*", help="Set a number of key-value pairs"
+    )
     options = parser.parse_args()
     env = DEFAULT_ENV
     for key, value in parse_arg_env(options.env).items():
@@ -144,7 +134,9 @@ def main(argv):
         srcDirPath=options.glsl_path,
         glslcPath=options.glslc_path,
         tmpDirPath=options.tmp_dir_path,
-        env=env)
+        env=env,
+    )
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     sys.exit(main(sys.argv))
