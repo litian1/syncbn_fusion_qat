@@ -58,6 +58,7 @@ def _check_iterator_valid(datapipe, iterator_id, next_method_exists=False) -> No
     elif hasattr(datapipe, "_is_child_datapipe") and datapipe._is_child_datapipe is True:
         if hasattr(datapipe, "_check_valid_iterator_id"):
             if not datapipe._check_valid_iterator_id(iterator_id):
+                print()
                 raise RuntimeError("This iterator has been invalidated, because a new iterator has been created "
                                    f"from one of the ChildDataPipes of "
                                    f"{_generate_iterdatapipe_msg(datapipe.main_datapipe)}." + _feedback_msg)
@@ -140,6 +141,13 @@ def hook_iterator(namespace, profile_name):
         def wrap_generator(*args, **kwargs):
             gen = func(*args, **kwargs)
             datapipe = args[0]
+            if datapipe._fast_forward_iterator:
+                while True:
+                    try:
+                        yield next(datapipe._fast_forward_iterator)
+                    except StopIteration:
+                        datapipe._fast_forward_iterator = None
+                        return
             iterator_id = _set_datapipe_valid_iterator_id(datapipe)  # This ID is tied to each created iterator
             _profiler_enabled = torch.autograd._profiler_enabled()
             try:
@@ -161,7 +169,7 @@ def hook_iterator(namespace, profile_name):
                         _check_iterator_valid(datapipe, iterator_id)
                         response = gen.send(request)
             except StopIteration as e:
-                return e.value
+                return e.value  # noqa: B901
             except Exception as e:
                 # TODO: Simplify the traceback message to skip over `response = gen.send(None)`
                 #       Part of https://github.com/pytorch/data/issues/284
@@ -206,6 +214,11 @@ def hook_iterator(namespace, profile_name):
         def wrap_iter(*args, **kwargs):
             iter_ret = func(*args, **kwargs)
             datapipe = args[0]
+            if datapipe._fast_forward_iterator:
+                iter_ret = datapipe._fast_forward_iterator
+                datapipe._fast_forward_iterator = None
+                datapipe._restored = False
+                return iter_ret
             iterator_id = _set_datapipe_valid_iterator_id(datapipe)  # This ID is tied to each created iterator
             return IteratorDecorator(iter_ret, datapipe, iterator_id, '__next__' in namespace)
 
