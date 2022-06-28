@@ -37,12 +37,16 @@ from torch.fx.experimental.proxy_tensor import make_fx
 
 def f(x, y):
     val = torch.mul(x, y)
-    return torch.cat([val, val])
+    out = torch.cat([val, val])
+    if out.shape[0] * out.shape[1] > 20:
+        out = out.cos()
+    return out.expand(out.shape)
 
-fx_g = make_fx(f)(torch.randn(5, 1), torch.randn(5, 1))
-print(fx_g)
+fx_g = make_fx(f)(torch.randn(5, 1), torch.randn(1, 5))
+fx_g.graph.eliminate_dead_code()
+fx_g.recompile()
+print(fx_g.code)
 print(fx_g.shape_env.guards)
-
 exit(0)
 
 foo = torch.empty(shape_env.create_symint("foo", 3), device='meta')

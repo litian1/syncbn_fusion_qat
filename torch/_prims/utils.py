@@ -320,7 +320,7 @@ def validate_dim_length(length: int):
     """
 
     # assert isinstance(length, int)
-    assert length > 0
+    assert length > -1
 
 
 def validate_shape(shape: ShapeType):

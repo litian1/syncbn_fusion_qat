@@ -27,8 +27,6 @@ class PySymInt(object):
         return self.shape_env.evaluate_expr(self.expr)
 
     def __bool__(self):
-        if isinstance(self.expr, bool):
-            return self.expr
         return bool(self.shape_env.evaluate_expr(self.expr))
 
 
@@ -65,13 +63,16 @@ class ShapeEnv(object):
     def create_symint(self, name, val):
         if val == 0 or val == 1:
             return val
-        sympy_expr = sympy.Symbol(name)
-        py_sym_int = PySymInt(sympy_expr, self)
+        sympy_expr = sympy.Symbol(name, positive=True)
+        py_sym_int = PySymInt(sympy_expr + 1, self)
         cpp_sym_int = torch._C.SymbolicIntNode.new_symint(py_sym_int)
         self.shape_env[sympy_expr] = val
         return cpp_sym_int
 
     def evaluate_expr(self, expr):
+        expr = expr.simplify()
+        if len(list(expr.free_symbols)) == 0:
+            return expr
         concrete_val = expr.subs(self.shape_env)
         self.guards.append((expr, concrete_val))
         return concrete_val

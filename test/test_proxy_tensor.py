@@ -223,6 +223,15 @@ fake_tensor_failures = {
 
     # segfaults
     skip('_masked.norm'),
+    skip('_masked.mean'),
+    skip('_masked.prod'),
+    skip('_masked.std'),
+    skip('_masked.sum'),
+    skip('_masked.var'),
+
+    skip('mean'),
+    skip('sum'),
+
     skip('linalg.pinv'),
     skip('pca_lowrank'),
     skip('t'),
@@ -245,7 +254,7 @@ def _test_make_fx_helper(self, device, dtype, op, use_fake):
 
         for arg in args:
             if arg.numel() == 0:
-                self.skipTest("Would segfault")
+                continue
 
             if isinstance(arg, torch.Tensor) and arg.dtype == torch.float:
                 arg.uniform_(0, 1)
