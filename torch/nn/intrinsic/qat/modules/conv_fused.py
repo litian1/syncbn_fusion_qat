@@ -14,6 +14,7 @@ _BN_CLASS_MAP = {
     1: nn.BatchNorm1d,
     2: nn.BatchNorm2d,
     3: nn.BatchNorm3d,
+    4: nn.SyncBatchNorm,
 }
 
 
@@ -433,6 +434,45 @@ class ConvBn2d(_ConvBnNd, nn.Conv2d):
                            padding, dilation, False, _pair(0), groups, bias, padding_mode,
                            eps, momentum, freeze_bn, qconfig, dim=2)
 
+class ConvSyncBn2d(_ConvBnNd, nn.Conv2d):
+    r"""
+    A ConvBn2d module is a module fused from Conv2d and SyncBatchNorm,
+    attached with FakeQuantize modules for weight,
+    used in quantization aware training.
+    We combined the interface of :class:`torch.nn.Conv2d` and
+    :class:`torch.nn.SyncBatchNorm`.
+    Similar to :class:`torch.nn.Conv2d`, with FakeQuantize modules initialized
+    to default.
+    Attributes:
+        freeze_bn:
+        weight_fake_quant: fake quant module for weight
+    """
+    _FLOAT_MODULE = nni.ConvBn2d
+    _FLOAT_CONV_MODULE = nn.Conv2d
+    _FLOAT_BN_MODULE = nn.SyncBatchNorm
+    _FLOAT_RELU_MODULE = None
+    def __init__(self,
+                 # ConvNd args
+                 in_channels, out_channels, kernel_size, stride=1,
+                 padding=0, dilation=1, groups=1,
+                 bias=None,
+                 padding_mode='zeros',
+                 # BatchNorm2d args
+                 # num_features: out_channels
+                 eps=1e-05, momentum=0.1,
+                 # affine: True
+                 # track_running_stats: True
+                 # Args for this module
+                 freeze_bn=False,
+                 qconfig=None):
+        kernel_size = _pair(kernel_size)
+        stride = _pair(stride)
+        padding = _pair(padding)
+        dilation = _pair(dilation)
+        _ConvBnNd.__init__(self, in_channels, out_channels, kernel_size, stride,
+                           padding, dilation, False, _pair(0), groups, bias, padding_mode,
+                           eps, momentum, freeze_bn, qconfig, dim=4)
+
 class ConvBnReLU2d(ConvBn2d):
     r"""
     A ConvBnReLU2d module is a module fused from Conv2d, BatchNorm2d and ReLU,
@@ -484,13 +524,57 @@ class ConvBnReLU2d(ConvBn2d):
     def from_float(cls, mod):
         return super(ConvBnReLU2d, cls).from_float(mod)
 
+class ConvSyncBnReLU2d(ConvSyncBn2d):
+    r"""
+    A ConvSyncBnReLU2d module is a module fused from Conv2d, SyncBatchNorm and ReLU,
+    attached with FakeQuantize modules for weight,
+    used in quantization aware training.
+    We combined the interface of :class:`torch.nn.Conv2d` and
+    :class:`torch.nn.SyncBatchNorm` and :class:`torch.nn.ReLU`.
+    Similar to `torch.nn.Conv2d`, with FakeQuantize modules initialized to
+    default.
+    Attributes:
+        weight_fake_quant: fake quant module for weight
+    """
+    # base class defines _FLOAT_MODULE as "ConvSyncBn2d"
+    _FLOAT_MODULE = nni.ConvSyncBnReLU2d  # type: ignore[assignment]
+    _FLOAT_CONV_MODULE = nn.Conv2d
+    _FLOAT_BN_MODULE = nn.SyncBatchNorm
+    _FLOAT_RELU_MODULE = nn.ReLU  # type: ignore[assignment]
+    # module class after fusing SyncBn into conv
+    _FUSED_FLOAT_MODULE = nni.ConvReLU2d
+    def __init__(self,
+                 # Conv2d args
+                 in_channels, out_channels, kernel_size, stride=1,
+                 padding=0, dilation=1, groups=1,
+                 bias=None,
+                 padding_mode='zeros',
+                 # SyncBatchNorm args
+                 # num_features: out_channels
+                 eps=1e-05, momentum=0.1,
+                 # affine: True
+                 # track_running_stats: True
+                 # Args for this module
+                 freeze_bn=False,
+                 qconfig=None):
+        super(ConvSyncBnReLU2d, self).__init__(in_channels, out_channels, kernel_size, stride,
+                                           padding, dilation, groups, bias,
+                                           padding_mode, eps, momentum,
+                                           freeze_bn,
+                                           qconfig)
+    def forward(self, input):
+        return F.relu(ConvSyncBn2d._forward(self, input))
+    @classmethod
+    def from_float(cls, mod):
+        return super(ConvSyncBnReLU2d, cls).from_float(mod)
+
 class ConvReLU2d(nnqat.Conv2d, nni._FusedModule):
     r"""A ConvReLU2d module is a fused module of Conv2d and ReLU, attached with
     FakeQuantize modules for weight for
     quantization aware training.
 
     We combined the interface of :class:`~torch.nn.Conv2d` and
-    :class:`~torch.nn.BatchNorm2d`.
+    :class:`~torch.nn.BatchNorm2d` or `~torch.nn.SyncBatchNorm`.
 
     Attributes:
         weight_fake_quant: fake quant module for weight

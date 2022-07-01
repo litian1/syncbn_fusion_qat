@@ -1,9 +1,9 @@
 import torch
-from torch.nn import Conv1d, Conv2d, Conv3d, ReLU, Linear, BatchNorm1d, BatchNorm2d, BatchNorm3d
+from torch.nn import Conv1d, Conv2d, Conv3d, ReLU, Linear, BatchNorm1d, BatchNorm2d, SyncBatchNorm, BatchNorm3d
 from torch.nn.utils.parametrize import type_before_parametrizations
 
-__all__ = ['ConvReLU1d', 'ConvReLU2d', 'ConvReLU3d', 'LinearReLU', 'ConvBn1d', 'ConvBn2d',
-           'ConvBnReLU1d', 'ConvBnReLU2d', 'ConvBn3d', 'ConvBnReLU3d', 'BNReLU2d', 'BNReLU3d',
+__all__ = ['ConvReLU1d', 'ConvReLU2d', 'ConvReLU3d', 'LinearReLU', 'ConvBn1d', 'ConvBn2d', 'ConvSyncBn2d',
+           'ConvBnReLU1d', 'ConvBnReLU2d', 'ConvSyncBnReLU2d', 'ConvBn3d', 'ConvBnReLU3d', 'BNReLU2d', 'BNReLU3d',
            'LinearBn1d']
 # Used for identifying intrinsic modules used in quantization
 class _FusedModule(torch.nn.Sequential):
@@ -63,6 +63,15 @@ class ConvBn2d(_FusedModule):
                 type_before_parametrizations(conv), type_before_parametrizations(bn))
         super(ConvBn2d, self).__init__(conv, bn)
 
+class ConvSyncBn2d(_FusedModule):
+    r"""This is a sequential container which calls the Conv 2d and SyncBatchNorm modules.
+    During quantization this will be replaced with the corresponding fused module."""
+    def __init__(self, conv, bn):
+        assert type_before_parametrizations(conv) == Conv2d and type_before_parametrizations(bn) == SyncBatchNorm, \
+            'Incorrect types for input modules{}{}'.format(
+                type_before_parametrizations(conv), type_before_parametrizations(bn))
+        super(ConvSyncBn2d, self).__init__(conv, bn)
+
 class ConvBnReLU1d(_FusedModule):
     r"""This is a sequential container which calls the Conv 1d, Batch Norm 1d, and ReLU modules.
     During quantization this will be replaced with the corresponding fused module."""
@@ -77,6 +86,15 @@ class ConvBnReLU2d(_FusedModule):
     During quantization this will be replaced with the corresponding fused module."""
     def __init__(self, conv, bn, relu):
         assert type_before_parametrizations(conv) == Conv2d and type_before_parametrizations(bn) == BatchNorm2d and \
+            type_before_parametrizations(relu) == ReLU, 'Incorrect types for input modules{}{}{}' \
+            .format(type_before_parametrizations(conv), type_before_parametrizations(bn), type_before_parametrizations(relu))
+        super().__init__(conv, bn, relu)
+
+class ConvSyncBnReLU2d(_FusedModule):
+    r"""This is a sequential container which calls the Conv 2d, SyncBatchNorm, and ReLU modules.
+    During quantization this will be replaced with the corresponding fused module."""
+    def __init__(self, conv, bn, relu):
+        assert type_before_parametrizations(conv) == Conv2d and type_before_parametrizations(bn) == SyncBatchNorm and \
             type_before_parametrizations(relu) == ReLU, 'Incorrect types for input modules{}{}{}' \
             .format(type_before_parametrizations(conv), type_before_parametrizations(bn), type_before_parametrizations(relu))
         super().__init__(conv, bn, relu)

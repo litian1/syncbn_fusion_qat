@@ -36,6 +36,10 @@ def fuse_conv_bn(is_qat, conv, bn):
         assert bn.num_features == conv.out_channels, 'Output channel of Conv2d must match num_features of BatchNorm2d'
         assert bn.affine, 'Only support fusing BatchNorm2d with affine set to True'
         assert bn.track_running_stats, 'Only support fusing BatchNorm2d with tracking_running_stats set to True'
+
+        if isinstance(type(bn), nn.SyncBatchNorm):
+            fused_module_class_map.update({nn.Conv2d: nni.ConvSyncBn2d})
+
         fused_module_class = fused_module_class_map.get((type(conv)), None)
         if fused_module_class is not None:
             return fused_module_class(conv, bn)
@@ -72,6 +76,10 @@ def fuse_conv_bn_relu(is_qat, conv, bn, relu):
         assert bn.num_features == conv.out_channels, 'Output channel of Conv must match num_features of BatchNorm'
         assert bn.affine, 'Only support fusing BatchNorm with affine set to True'
         assert bn.track_running_stats, 'Only support fusing BatchNorm with tracking_running_stats set to True'
+
+        if isinstance(type(bn), nn.SyncBatchNorm):
+            map_to_fused_module_train.update({nn.Conv2d: nni.ConvSyncBnReLU2d})
+
         fused_module = map_to_fused_module_train.get(type(conv), None)
         if fused_module is not None:
             return fused_module(conv, bn, relu)
@@ -156,6 +164,8 @@ DEFAULT_OP_LIST_TO_FUSER_METHOD: Dict[Tuple, Union[nn.Sequential, Callable]] = {
     (nn.Conv2d, nn.BatchNorm2d, nn.ReLU): fuse_conv_bn_relu,
     (nn.Conv3d, nn.BatchNorm3d): fuse_conv_bn,
     (nn.Conv3d, nn.BatchNorm3d, nn.ReLU): fuse_conv_bn_relu,
+    (nn.Conv2d, nn.SyncBatchNorm): fuse_conv_bn,
+    (nn.Conv2d, nn.SyncBatchNorm, nn.ReLU): fuse_conv_bn_relu,
     (nn.Conv1d, nn.ReLU): sequential_wrapper2(nni.ConvReLU1d),
     (nn.Conv2d, nn.ReLU): sequential_wrapper2(nni.ConvReLU2d),
     (nn.Conv3d, nn.ReLU): sequential_wrapper2(nni.ConvReLU3d),
